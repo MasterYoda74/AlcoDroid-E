@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8">
+    <title>AlcoDroid R2-D2</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="css/build.css" rel="stylesheet">
+    <link href="css/ad.css" rel="stylesheet">
+    <script type="text/javascript" src="js/func.js"></script>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+
+</head>
+
+<body>
+    <div style="background: black;" class="container loader-bg">
+        <div class="row show" id="container_column">
+            <h1 id="title" style="font-weight: bold;">AlcoDroid R2-D2</h1>
+            <div id="state" style="margin-bottom: 10px;" onclick="this.style.zIndex=10" class="col-sm-offset-1 col-sm-10 col-md-offset-2 col-md-8 col-lg-offset-3 col-lg-6">
+                <h5 id="" class="alert-warning">Текущее состояние</h5>
+                <div class="container-fluid">
+                    <div id="dock-1" class="col-xs-4 col-sm-2 dock dock-empty">1</div>
+                    <div id="dock-2" class="col-xs-4 col-sm-2 dock dock-full">2</div>
+                    <div id="dock-3" class="col-xs-4 col-sm-2 dock dock-clear">3</div>
+                    <div id="dock-4" class="col-xs-4 col-sm-2 dock dock-new">4</div>
+                    <div id="dock-5" class="col-xs-4 col-sm-2 dock">5</div>
+                    <div id="dock-6" class="col-xs-4 col-sm-2 dock">6</div>
+                </div>
+                <div class="container-fluid">
+                    <div class="col-xs-12 col-sm-6 sitem">
+                        <div class="col-xs-6 sname">Всего налито:</div>
+                        <div id="tml" class="col-xs-6 sval">99999999 мл</div>
+                    </div>
+                    <div class="col-xs-12 col-sm-6 sitem">
+                        <div class="col-xs-6 sname">Всего шотов:</div>
+                        <div id="tshots" class="col-xs-6 sval">99999999</div>
+                    </div>
+                </div>
+                <div id="list" class="container-fluid list-top">
+                    <div class="col-sm-6 col-xs-6">Имя</div>
+                    <div class="col-sm-3 col-xs-3">Шоты</div>
+                    <div class="col-sm-3 col-xs-3">Выпито</div>
+                </div>
+                <div class="container-fluid" id="status">
+
+                </div>
+            </div>
+
+            <div id="content" onclick="this.style.zIndex=10" class="col-sm-offset-1 col-sm-10 col-md-offset-2 col-md-8 col-lg-offset-3 col-lg-6">
+                <h5 id="" class="alert-warning">Настройки</h5>
+
+                <!--<a id="" class="btn btn-block btn-danger" href="/">Главная</a>-->
+                <h2 id="" class="">Джедаи</h2>
+                <div class="container-fluid" id="users">
+                </div>
+                <div id="userSave" style="display: none;" onclick="userSave();" class="btn btn-block btn-success btn-plus">Сохранить</div>
+                <hr id="" class="">
+                <h2 id="" class="">Тара</h2>
+                <div class="container-fluid">
+                    <div class="container-fluid" id="shots"></div>
+                    <div id="addShot" hidden>
+                        <input id="new-shot" class="form-control  input-class" style="width: 40%;" pattern="[0-9a-zA-Zа-яА-Я.\- ]{1,20}" placeholder="ID" value="">
+                        <input id="new-color" class="form-control  input-class" style="width: 25%;margin-bottom: -13px;" placeholder="Цвет">
+                        <div class="btn btn-block btn-success btn-plus" onclick="addShot();" style="width: 30%;">Добавить шот</div>
+                    </div>
+                </div>
+                <!--<input id="" hidden onclick="shotSave();" class="btn btn-block btn-success btn-plus" value="Сохранить" type="button">
+                -->
+                
+                <hr id="" class="">
+                <h3>WiFi</h3>
+                <div class="container-fluid">
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Режим точки доступа:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="checkbox" name="isAP" id="isAP">
+                        </div>
+                    </div>
+                </div>
+                <div class="container-fluid">
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>SSID точки доступа:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input id="APSSID" undefined="" class="form-control " pattern="[0-9a-zA-Z-]{1,20}" placeholder="Не установлено" value="#########">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Пароль точки доступа:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input id="APPASS" undefined="" class="form-control " pattern="[0-9a-zA-Zа-яА-Я.\- ]{8,20}" placeholder="Не установлено" value="#########">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>SSID роутера:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input id="wifiSSID" undefined="" class="form-control " pattern="[0-9a-zA-Z- ]{1,20}" placeholder="Не установлено" value="#########">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Пароль роутера:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input id="wifiPASS" undefined="" type="password" class="form-control " pattern="[0-9a-zA-Zа-яА-Я.\- ]{8,20}" placeholder="Не установлено" value="#########">
+                        </div>
+                    </div>
+                </div>
+                <h3>Настройки системы:</h3>
+                <div class="container-fluid">
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Вынос MAX:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="number" class="form-control" id="SMAX" placeholder="MAX" min="0" max="180" step="1" value="999999">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Вынос MIN:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="number" class="form-control" id="SMIN" placeholder="MIN" min="0" max="180" step="1" value="999999">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Шагов на 1 мл:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="number" class="form-control" id="Steps" placeholder="Steps" min="10" max="18000" step="1" value="999999">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Прокачка (мл):</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="number" class="form-control" id="Start" placeholder="Start" min="0" max="180" step="1" value="999999">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Откат (мл):</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="number" class="form-control" id="Feedback" placeholder="Feedback" min="0" max="180" step="1" value="999999">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-6">
+                            <h4>Яркость LED:</h4>
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="number" class="form-control" id="LED" placeholder="LED" min="0" max="254" step="1" value="999999">
+                        </div>
+                    </div>
+                </div>
+                <input id="" onclick="send_request(this, ''+renameGet('timeZone?timeZone=[[timeZone]]'),'')" class="btn btn-block btn-success btn-plus" value="Сохранить" type="button">
+                <hr id="" class="">
+                <a id="" class="btn btn-block btn-warning btn-minus" href="javascript:if(confirm(renameBlock(jsonResponse,'Перезагрузить?'))){send_request(this,'/restart?device=ok');}">Перезагрузить устройство</a>
+            </div>
+        </div>
+
+    </div>
+</body>
+
+
+</html>

@@ -1,0 +1,14 @@
+{
+    "version":"v01",
+    "wifiSSID":"MasterYoda-WiFi",
+    "wifiPASS":"1236987master",
+    "APSSID":"AlcoBot",
+    "APPASS":"12345678",
+    "isAP":false,
+    "servoMAX": 100,
+    "servoMIN": 7,
+    "stepPerMl": 50,
+    "feedback": 50,
+    "startMl": 50,
+    "ledbright": 60
+}
