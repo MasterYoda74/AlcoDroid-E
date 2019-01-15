@@ -1050,14 +1050,14 @@ void fMenu() {
             drawText(WiFi.SSID());
             break;
           case 16:
-            drawText("Foo");
+            drawText("Foo");//wifi pass
           break;
           case 17:
             //drawText(String(option.feedback)+" ml");
             drawText(String(jsonReadtoInt(configSetup,"feedback"))+ " ml");
           break;          
           case 18:
-            drawText("ToDo");
+            drawText("ToDo");//ip
            break;           
           default:
           break;
