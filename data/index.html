@@ -19,10 +19,10 @@
             <div id="state" style="margin-bottom: 10px;" onclick="this.style.zIndex=10" class="col-sm-offset-1 col-sm-10 col-md-offset-2 col-md-8 col-lg-offset-3 col-lg-6">
                 <h5 id="" class="alert-warning">Текущее состояние</h5>
                 <div class="container-fluid">
-                    <div id="dock-1" class="col-xs-4 col-sm-2 dock dock-empty">1</div>
-                    <div id="dock-2" class="col-xs-4 col-sm-2 dock dock-full">2</div>
-                    <div id="dock-3" class="col-xs-4 col-sm-2 dock dock-clear">3</div>
-                    <div id="dock-4" class="col-xs-4 col-sm-2 dock dock-new">4</div>
+                    <div id="dock-1" class="col-xs-4 col-sm-2 dock">1</div>
+                    <div id="dock-2" class="col-xs-4 col-sm-2 dock">2</div>
+                    <div id="dock-3" class="col-xs-4 col-sm-2 dock">3</div>
+                    <div id="dock-4" class="col-xs-4 col-sm-2 dock">4</div>
                     <div id="dock-5" class="col-xs-4 col-sm-2 dock">5</div>
                     <div id="dock-6" class="col-xs-4 col-sm-2 dock">6</div>
                 </div>
@@ -44,6 +44,7 @@
                 <div class="container-fluid" id="status">
 
                 </div>
+                <div id="startSys"class="btn btn-block btn-success btn-plus" onclick="startSystem();">Прокачка системы</div>
             </div>
 
             <div id="content" onclick="this.style.zIndex=10" class="col-sm-offset-1 col-sm-10 col-md-offset-2 col-md-8 col-lg-offset-3 col-lg-6">
@@ -58,7 +59,7 @@
                 <h2 id="" class="">Тара</h2>
                 <div class="container-fluid">
                     <div class="container-fluid" id="shots"></div>
-                    <div id="addShot" hidden>
+                    <div id="addShot" style="display: none;">
                         <input id="new-shot" class="form-control  input-class" style="width: 40%;" pattern="[0-9a-zA-Zа-яА-Я.\- ]{1,20}" placeholder="ID" value="">
                         <input id="new-color" class="form-control  input-class" style="width: 25%;margin-bottom: -13px;" placeholder="Цвет">
                         <div class="btn btn-block btn-success btn-plus" onclick="addShot();" style="width: 30%;">Добавить шот</div>

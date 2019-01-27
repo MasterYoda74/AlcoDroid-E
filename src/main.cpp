@@ -285,6 +285,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 void webSocket_init();
 void SocketSend (String broadcast);
 void SocketSendDock(int pos);
+void startProc();
 
 void setup(){                 
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
@@ -375,10 +376,10 @@ void loop() {
   //Serial.print("Ok");
   readCom();
   webSocket.loop(); // Работа webSocket
-  if (eyeTimer + 1000 < millis()) {
+  // if (eyeTimer + 1000 < millis()) {
     randEye();
-    eyeTimer = millis();
-  } 
+  //   eyeTimer = millis();
+  // } 
   HTTP.handleClient();
   delay(50);
 
@@ -465,6 +466,7 @@ void sendCom(String code, String state) {
 bool waitingA (String code, String state, int time) {
   bool res=false;
   bool wait=true;
+  if (state == "any") return true;
   uint t = millis();
   while (wait) {
     if(Serial.available() > 0) {
@@ -508,6 +510,7 @@ void checkDocks() {
   if (dock[qPos].user >= 0 && dock[qPos].state == 0 && users[dock[qPos].user].doze > 0) {
     if (moveTo(qPos, users[dock[qPos].user].id)) {
       //Serial.println("move ok");
+      ledDraw(6, CRGB::Blue);
       dock[qPos].state = 1;
       SocketSendDock(qPos);
       sendCom("M2","0");
@@ -516,6 +519,8 @@ void checkDocks() {
       pump(users[dock[qPos].user].doze);
       delay(500);
       sendCom("M3","0");
+      ledDraw(qPos,CRGB::Red);
+      //ledDraw(6, CRGB::Aqua);
       totalDrink = totalDrink + users[dock[qPos].user].doze;
       users[dock[qPos].user].total = users[dock[qPos].user].total + users[dock[qPos].user].doze;
       users[dock[qPos].user].totalShots++;
@@ -532,10 +537,11 @@ bool moveTo(int pos, String code) {
   sendCom("M1",String(pos+1));
 
   if( waitingA("M1",String(pos+1), 5000)) {
+    if (code != "menu"){
     sendCom("R",String(pos+1));
 //SocketSend("P: "+ String(pos) + " C: " + code + " R: " + String(res));
-    res = waitingA(String(pos+1),code, 3000);
-    
+    res = waitingA(String(pos+1),code, 1000);
+    }
     if (code == "any" && pos == 0){
       res = true;
     }
@@ -549,20 +555,53 @@ void pump(uint ml) {
   int stepPerMl = jsonReadtoInt(configSetup,"stepPerMl");
   int feedback = jsonReadtoInt(configSetup,"feedback");
   stepper.enable();
-  ledDraw(6, CRGB::OrangeRed);
+  //ledDraw(6, CRGB::OrangeRed);
   stepper.move(ml*MICROSTEP*stepPerMl);
   stepper.move(-feedback *MICROSTEP*stepPerMl);
   stepper.disable();
-  ledDraw(6, CRGB::Aqua);
+  //ledDraw(6, CRGB::Aqua);
 }
 void ledDraw(uint led,CRGB color){
   leds[led]=color;
   FastLED.show();
 }
 void randEye() {
-  leds[6].r = random(5,250);
-  leds[6].g = random(5,250);
-  leds[6].b = random(5,250);
+  static int r;
+  static int g;
+  static int b;
+  static bool dirr;
+  static bool dirg;
+  static bool dirb;
+  // leds[6].r = random(5,250);
+  // leds[6].g = random(5,250);
+  // leds[6].b = random(5,250);
+  int shiftr = random(0,20);
+  int shiftg = random(0,20);
+  int shiftb = random(0,20);
+  if (dirr) {
+    r += shiftr;
+  } else {
+    r -= shiftr;
+  }
+  if (dirg) {
+    g += shiftg;
+  } else {
+    g -= shiftg;
+  }
+  if (dirb) {
+    b += shiftb;
+  } else {
+    b -= shiftb;
+  } 
+  if (r>240) dirr=false;
+  if (g>240) dirg=false;
+  if (b>240) dirb=false;
+  if (r<15) dirr=true;
+  if (g<15) dirg=true;
+  if (b<15) dirb=true;
+  leds[6].r=r;
+  leds[6].g=g;
+  leds[6].b=b;
   // int rand = random(-5,5);
   // int c;
   // c=cr;
@@ -794,20 +833,8 @@ void onClick(int id) {
           }
           break;
         case F_START:
-          if (!isStart) {
-            if (moveTo(0,"any")) {
-              sendCom("M2","0");
-              delay(500);
-              //pump(option.startMl);
-              pump(jsonReadtoInt(configSetup,"startMl"));
-              delay(500);
-              sendCom("M3","0");
-              isStart=true;
-              curFrame=F_WAIT;
-            }
-          } else {
-            curFrame = F_MENU;
-          }
+          startProc();
+          break;
         default:
           break;
       }      
@@ -832,6 +859,23 @@ void onClick(int id) {
   }  
 }
 
+void startProc() {
+            if (!isStart) {
+            if (moveTo(0,"any")) {
+              sendCom("M2","0");
+              delay(500);
+              //pump(option.startMl);
+              pump(jsonReadtoInt(configSetup,"startMl"));
+              delay(500);
+              sendCom("M3","0");
+              isStart=true;
+              curFrame=F_WAIT;
+            }
+          } else {
+            curFrame = F_MENU;
+          }
+}
+
 void onHold(int id) {
   switch (id) {
     case 0:  //LEFT
@@ -842,6 +886,7 @@ void onHold(int id) {
       switch (curFrame) {
         case F_WAIT:
           curFrame = F_MENU;
+          moveTo(0,"menu");
           break;
         case F_MENU:
           curFrame = F_WAIT;
@@ -1235,19 +1280,19 @@ void docksDraw() {
   for (int i = 0; i < 6; i++){
     if (dock[i].user == -1) {
       display.drawCircle(x, y, 1, WHITE);
-      ledDraw(i,CRGB::Black);
+      //ledDraw(i,CRGB::Black);
     }
     if (dock[i].user != -1 && dock[i].state == 0) {
       display.drawCircle(x, y, 4, WHITE);
-      ledDraw(i,CRGB::Green);
+      //ledDraw(i,CRGB::Green);
       }
     if (dock[i].user != -1 && dock[i].state == 1) {
       display.fillCircle(x, y, 4, WHITE);
-      ledDraw(i,CRGB::Red);
+      //ledDraw(i,CRGB::Red);
       }
     if (dock[i].user != -1 && dock[i].state == 2) {
       display.fillCircle(x, y, 2, WHITE);
-      ledDraw(i,CRGB::Yellow);
+      //ledDraw(i,CRGB::Yellow);
       }
     x = x + shift;
   }
@@ -1352,6 +1397,7 @@ void DSEvent(int pos, String code) {//pos 1-6
     }
     dock[pos].user = -1;
     dock[pos].state = -1;
+    ledDraw(pos,CRGB::Black);
     
   } else {
     userCount();
@@ -1359,7 +1405,10 @@ void DSEvent(int pos, String code) {//pos 1-6
       if (users[i].id == code) {
         isNew = false;
         dock[pos].user = i;
-        if (users[i].doze > 0) dock[pos].state = 0; 
+        if (users[i].doze > 0) {
+          dock[pos].state = 0; 
+          ledDraw(pos,CRGB::Green);
+        }
         if (users[i].doze == 0) dock[pos].state = 2; 
       } 
     }
@@ -1372,6 +1421,7 @@ void DSEvent(int pos, String code) {//pos 1-6
         users[totalUsers].total = 0;
         dock[pos].user=totalUsers;
         dock[pos].state=2; 
+        ledDraw(pos,CRGB::Yellow);
         totalUsers++;  
     }
   } 
@@ -1584,6 +1634,10 @@ void HTTP_init(void) {
   HTTP.on("/config.json", HTTP_GET, []() {
     HTTP.send(200, "application/json", configSetup);
   });
+  HTTP.on("/start", HTTP_GET, []() {
+    startProc();
+    HTTP.send(200, "text/plain", "OK");
+  });
 
   // -------------------Выдаем данные users
   HTTP.on("/users.json", HTTP_GET, []() {
@@ -1642,6 +1696,7 @@ void HTTP_init(void) {
             i++;
       }
       userCount();
+      SocketData("userreload","1","99");
       HTTP.send(200, "text/plain", "OK");
     } else {
   // No!
@@ -1659,7 +1714,7 @@ void HTTP_init(void) {
     FastLED.setBrightness(jsonReadtoInt(configSetup, "ledbright"));
     HTTP.send(200, "text/plain", "OK");
   });
-    HTTP.on("/saveshot", HTTP_GET, []() {
+  HTTP.on("/saveshot", HTTP_GET, []() {
     String js= HTTP.arg("json");
     //configSetup = js;
     //saveConfig();

@@ -181,7 +181,7 @@ function parseusers(configJ) {
         inpname.placeholder="Имя";
         inpname.value=configJ.users[i].name;
         inpname.id="userName"+configJ.users[i].ID;
-        inpname.setAttribute('onchange','userChange();');
+        inpname.setAttribute('oninput','userChange();');
         ///inpname.setAttribute('onblur','userBlur('+i+');')
         div2.appendChild(inpname);
         var div3=document.createElement('div');
@@ -201,7 +201,7 @@ function parseusers(configJ) {
         newdoze.step="5";
         newdoze.id="userDoze"+configJ.users[i].ID;
         newdoze.value=configJ.users[i].doze;
-        newdoze.setAttribute('onchange','userChange();');
+        newdoze.setAttribute('oninput','userChange();');
         ///newdoze.setAttribute('onblur','userBlurDoze('+i+');')
         div4.appendChild(newdoze);
         var div5=document.createElement('div');
@@ -222,7 +222,7 @@ function parseusers(configJ) {
         var corr=document.getElementById("shot"+configJ.users[i].ID);
         if (corr) corr.lastChild.innerText="";
         if (configJ.users[i].color == "grey" && !isNew) {
-            document.getElementById("addShot").removeAttribute("hidden");
+            document.getElementById("addShot").style ="display: block;";
             document.getElementById("new-shot").value = configJ.users[i].ID;
             document.getElementById("new-color").value = "";
             isNew=true;
@@ -333,7 +333,7 @@ function addShot() {
     });
     SendRequest("GET", "saveshot","json="+JSON.stringify(jsonShots), function(inp){
         if (inp == "OK") {
-            document.getElementById("addShot").setAttribute ="hidden";
+            document.getElementById("addShot").style ="display: none;";
         }
     });
     for (i=0; i<jsonUsers.users.length;i++) {
@@ -341,6 +341,7 @@ function addShot() {
             jsonUsers.users[i].color = shotColor;
         }
     }
+    document.getElementById("addShot").style ="display: none;";
     parseshots(jsonShots);
     parseusers(jsonUsers);
     userSave();
@@ -365,6 +366,47 @@ function saveconfig() {
     });
 }
 
+function startSystem() {
+    SendRequest("GET", "start", "", function(inp){
+        if (inp == "OK") {
+            document.getElementById("startSys").style = "display: none;";
+        }
+    });
+}
+
+function dataProc(jdata){
+    if (jdata.dock) {
+        var doc = document.getElementById("dock-"+(jdata.dock[0].pos+1));
+        switch (jdata.dock[0].state){
+            case -1:
+            doc.className = "col-xs-4 col-sm-2 dock";
+            doc.innerText=jdata.dock[0].pos+1;
+            parseshots(jsonShots);
+            parseusers(jsonUsers);
+            break;
+            case 0:
+            doc.className = "col-xs-4 col-sm-2 dock dock-empty";
+            doc.innerText=jsonUsers.users[jdata.dock[0].user].name;
+            break;
+            case 1:
+            doc.className = "col-xs-4 col-sm-2 dock dock-full";
+            doc.innerText=jsonUsers.users[jdata.dock[0].user].name;
+            SendRequest("GET","users.json","",parseusers);
+            break;
+            case 2:
+            doc.className = "col-xs-4 col-sm-2 dock dock-new";
+            SendRequest("GET","shots.json","",parseshots);
+            SendRequest("GET","users.json","",parseusers);
+            break;
+            default:
+            break;
+        }
+    }
+    if (jdata.userreload) {
+        SendRequest("GET","shots.json","",parseshots);
+        SendRequest("GET","users.json","",parseusers);
+    }
+}
 function run_socket() {
     //var connection = new WebSocket(url.replace('socket ','ws://'), ['arduino']);
     var connection = new WebSocket('ws://'+jsonConfig.ip+":81", ['arduino']);
@@ -379,7 +421,7 @@ function run_socket() {
     }
     connection.onmessage = function (e) {
      console.log('Server: ', e.data);
-     //var socket_data=JSON.parse(e.data);
+     dataProc(JSON.parse(e.data));
      //jsonResponse_news = mergeObject(jsonResponse, socket_data);
 
     }
