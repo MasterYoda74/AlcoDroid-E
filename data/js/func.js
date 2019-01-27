@@ -268,6 +268,7 @@ function userClick(index) {
         jsonUsers.users.splice(index,1);
         parseshots(jsonShots);
         parseusers(jsonUsers);
+        userSave();
         userButPressed=undefined;
     } else {
         clearTimeout(timerID);
