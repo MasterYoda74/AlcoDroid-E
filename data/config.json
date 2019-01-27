@@ -7,8 +7,8 @@
     "isAP":false,
     "servoMAX": 100,
     "servoMIN": 7,
-    "stepPerMl": 50,
-    "feedback": 50,
+    "stepPerMl": 7,
+    "feedback": 10,
     "startMl": 50,
     "ledbright": 60
 }

@@ -13,7 +13,7 @@
 #include <Fonts/FreeSans12pt7b.h>
 #define FASTLED_ESP8266_NODEMCU_PIN_ORDER
 #include <FastLED.h>
-
+#include <WebSocketsServer.h>
 #include <ESP8266WebServerSecure.h>
 #include <ESP8266WebServerSecureAxTLS.h>
 #include <ESP8266WebServerSecureBearSSL.h>
@@ -31,10 +31,11 @@ ESP8266HTTPUpdateServer httpUpdater;
 ESP8266WebServer HTTP;
 // Для файловой системы
 File fsUploadFile;
-
+WebSocketsServer webSocket = WebSocketsServer(81);
 
 String configSetup = "{}";
 String configJson = "{}";
+String userJson = "{users:[]}";
 
 int port = 80;
 
@@ -111,8 +112,12 @@ int doAction = 0;
 int changingVal=0;
 uint timer;
 uint eyeTimer;
+String curWifiPass;
+String curWifiSsid;
+//int cr=127,cg=127,cb=127;
 boolean isArduino=false;
 String IP = "192.168.11.1";
+bool isWS=false;
 
 struct MenuItem {
   int idx;
@@ -188,6 +193,7 @@ int addr = 0;
 struct user {
   String id;
   String name;
+  String color;
   int doze;
   int total;
   int totalShots;
@@ -264,13 +270,21 @@ void HTTP_init(void);
 void SSDP_init(void);
 String jsonRead(String &json, String name);
 int jsonReadtoInt(String &json, String name);
+bool jsonReadtoBool(String &json, String name);
 String jsonWrite(String &json, String name, String volume);
 String jsonWrite(String &json, String name, int volume);
+String jsonWriteBool(String &json, String name, bool volume);
 void saveConfig ();
 String readFile(String fileName, size_t len );
 String writeFile(String fileName, String strings );
 void WIFIinit();
 bool StartAPMode();
+String findColor(String id);
+void SocketData (String key, String data, String data_old);
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
+void webSocket_init();
+void SocketSend (String broadcast);
+void SocketSendDock(int pos);
 
 void setup(){                 
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
@@ -280,7 +294,7 @@ void setup(){
   inputString.reserve(200);
   FS_init();
   configSetup = readFile("config.json", 4096);
-  Serial.println(configSetup);
+  //Serial.println(configSetup);
   WIFIinit();
   HTTP_init();
   curName = utf8rus("Мастер Йода");
@@ -303,7 +317,7 @@ void setup(){
   stepper.begin(120,MICROSTEP);
   stepper.setSpeedProfile(stepper.LINEAR_SPEED, ACCELERATION, ACCELERATION);
   stepper.disable();
-  
+  webSocket_init();
   timer = millis();
   //display.clearDisplay();
   display.setCursor(0,0);
@@ -335,7 +349,7 @@ void setup(){
   }
   timer=0;
   display.display();
-  eeLoad();
+  //eeLoad();
   delay(1000);
   //display.display();
   display.clearDisplay();
@@ -343,10 +357,11 @@ void setup(){
   isOn=false;
   isStart=false; 
   FastLED.clear(); 
-  FastLED.setBrightness(jsonReadtoInt(configSetup, "wifiSSID"));//option.ledbright);
+  FastLED.setBrightness(jsonReadtoInt(configSetup, "ledbright"));//option.ledbright);
   //option.wifiSSID = "AlcoBot";
   //option.wifiPASS = "12345678";
   eyeTimer=millis();
+
 }
 
 void loop() {
@@ -359,11 +374,13 @@ void loop() {
   showFrame(curFrame);
   //Serial.print("Ok");
   readCom();
-  if (eyeTimer + 300 < millis()) {
+  webSocket.loop(); // Работа webSocket
+  if (eyeTimer + 1000 < millis()) {
     randEye();
     eyeTimer = millis();
   } 
   HTTP.handleClient();
+  delay(50);
 
 }
 
@@ -403,13 +420,13 @@ void readCom() {
         //Serial.print("-> ");
         //Serial.println(v1+ " *** "+v2);
         if (v1 == "M9") {
-          option.servoMAX = v2.toInt();
+          //option.servoMAX = v2.toInt();
           jsonWrite(configSetup,"servoMIN",v2.toInt());
           sendCom("M9","OK");
         }
         
         if (v1 == "M10") {
-          option.servoMIN = v2.toInt();
+          //option.servoMIN = v2.toInt();
           jsonWrite(configSetup,"servoMIN",v2.toInt());
           sendCom("M10","OK");
         }
@@ -451,7 +468,9 @@ bool waitingA (String code, String state, int time) {
   uint t = millis();
   while (wait) {
     if(Serial.available() > 0) {
+      //SocketSend("Serial");
       String instr = Serial.readStringUntil('\n');
+      //SocketSend(instr);
       char* frag1, *frag2;
       char buf[30];
       String v1,v2;
@@ -464,16 +483,25 @@ bool waitingA (String code, String state, int time) {
       v2.trim();
       //Serial.print("w-> ");
       // Serial.println(v1+ " *** "+v2);
+      //SocketSend("v1: "+ String(v1) + " v2: " + v2 + " R: " + String(code) + " S: " + state);
       if (v1==code && v2==state) {
+        //SocketSend("In code state");
         wait=false;
         res = true;      
       }
-      if (v1.toInt()) {
+      if (v1.toInt() && state != "any") {
+       //SocketSend("In DSEvent");
         DSEvent(v1.toInt(),v2);
+        //SocketSend("out DSEvent");
       }
     }
-    if (t+time < millis()) wait=false; 
+    //SocketSend("W");
+    if (t+time < millis()) {
+      wait=false;
+      //SocketSend("out time");
+      }
   }
+  //SocketSend("Ret: "+String(res));
   return res;
 }
 void checkDocks() {
@@ -481,14 +509,16 @@ void checkDocks() {
     if (moveTo(qPos, users[dock[qPos].user].id)) {
       //Serial.println("move ok");
       dock[qPos].state = 1;
+      SocketSendDock(qPos);
       sendCom("M2","0");
       delay(500);
-      curName=users[dock[qPos].user].name;
+      curName=utf8rus(users[dock[qPos].user].name);
       pump(users[dock[qPos].user].doze);
       delay(500);
       sendCom("M3","0");
       totalDrink = totalDrink + users[dock[qPos].user].doze;
       users[dock[qPos].user].total = users[dock[qPos].user].total + users[dock[qPos].user].doze;
+      users[dock[qPos].user].totalShots++;
       //Serial.println(users[dock[qPos].user].name);
     } else {
       //Serial.println("move BAD");
@@ -500,33 +530,58 @@ void checkDocks() {
 bool moveTo(int pos, String code) {
   bool res = false;
   sendCom("M1",String(pos+1));
+
   if( waitingA("M1",String(pos+1), 5000)) {
     sendCom("R",String(pos+1));
-
-    res = waitingA(String(pos+1),code, 1000);
+//SocketSend("P: "+ String(pos) + " C: " + code + " R: " + String(res));
+    res = waitingA(String(pos+1),code, 3000);
+    
     if (code == "any" && pos == 0){
       res = true;
     }
   }
+  //SocketSend("moveto ret: "+String(res));
   return res;
 }
 void pump(uint ml) {
   curMl=ml;
   fFill();
   int stepPerMl = jsonReadtoInt(configSetup,"stepPerMl");
+  int feedback = jsonReadtoInt(configSetup,"feedback");
   stepper.enable();
+  ledDraw(6, CRGB::OrangeRed);
   stepper.move(ml*MICROSTEP*stepPerMl);
-  stepper.move(-option.feedback *MICROSTEP*stepPerMl);
+  stepper.move(-feedback *MICROSTEP*stepPerMl);
   stepper.disable();
+  ledDraw(6, CRGB::Aqua);
 }
 void ledDraw(uint led,CRGB color){
   leds[led]=color;
   FastLED.show();
 }
 void randEye() {
-  leds[6].r = random(0,255);
-  leds[6].g = random(0,255);
-  leds[6].b = random(0,255);
+  leds[6].r = random(5,250);
+  leds[6].g = random(5,250);
+  leds[6].b = random(5,250);
+  // int rand = random(-5,5);
+  // int c;
+  // c=cr;
+  // c += rand;
+  // if (c > 250 || c <10 ) c = cr;
+  // cr = c;
+  // leds[6].r = c;
+  // rand = random(-5,5);
+  // c = cg;
+  // c += rand;
+  // if (c > 250 || c <10 ) c = cg;
+  // cg=c;
+  // leds[6].g = c;
+  // rand = random(-5,5);
+  // c = cb;
+  // c += rand;
+  // if (c > 250 || c <10 ) c = cb;
+  // cb=c;  
+  // leds[6].b = c;  
   FastLED.show();
 }
 void handleMenuEvent(AceButton* button, uint8_t eventType,
@@ -612,7 +667,12 @@ void onClick(int id) {
                   userCount();
                   break;
                 case 14:
-                  option.isAP = !option.isAP;
+                  //option.isAP = !option.isAP;
+                  if (jsonReadtoBool(configSetup,"isAP")) {
+                    jsonWriteBool(configJson,"isAP",false);
+                  } else {
+                    jsonWriteBool(configJson,"isAP",true);
+                  }
                   break;
                 case 5:
                   doAction = 4;
@@ -629,7 +689,7 @@ void onClick(int id) {
                     changingVal = jsonReadtoInt(configSetup,"stepPerMl");
                   } else {
                     doAction = 0;
-                    option.stepPerMl=changingVal;
+                    //option.stepPerMl=changingVal;
                     jsonWrite(configSetup,"stepPerMl",changingVal);
                   }
                   break;
@@ -640,7 +700,7 @@ void onClick(int id) {
                     changingVal = jsonReadtoInt(configSetup,"servoMAX");
                   } else {
                     doAction = 0;
-                    option.servoMAX=changingVal;
+                    //option.servoMAX=changingVal;
                     jsonWrite(configSetup,"servoMAX",changingVal);
                   } 
                   break;
@@ -651,7 +711,7 @@ void onClick(int id) {
                     changingVal = jsonReadtoInt(configSetup,"servoMIN");
                   } else {
                     doAction = 0;
-                    option.servoMIN=changingVal;
+                    //option.servoMIN=changingVal;
                     jsonWrite(configSetup,"servoMIN",changingVal);
                   } 
                   break;
@@ -659,7 +719,7 @@ void onClick(int id) {
                   //doAction = 4;
                   //sendCom("M5","0"); 
                   //curFrame = F_ACTION;
-                  pump(50);
+                  pump(100);
                   break;                                  
                 case 13:
                   if ( doAction==0) {
@@ -668,7 +728,7 @@ void onClick(int id) {
                     changingVal = jsonReadtoInt(configSetup,"startMl");
                   } else {
                     doAction = 0;
-                    option.startMl=changingVal;
+                    //option.startMl=changingVal;
                     jsonWrite(configSetup,"startMl",changingVal);
                   }
                   break;    
@@ -679,7 +739,7 @@ void onClick(int id) {
                     changingVal = jsonReadtoInt(configSetup,"feedback");
                   } else {
                     doAction = 0;
-                    option.feedback=changingVal;
+                    //option.feedback=changingVal;
                     jsonWrite(configSetup,"feedback",changingVal);
                   }
                   break; 
@@ -702,7 +762,7 @@ void onClick(int id) {
                     changingVal = jsonReadtoInt(configSetup,"ledbright");
                   } else {
                     doAction = 0;
-                    option.ledbright=changingVal;
+                    //option.ledbright=changingVal;
                     jsonWrite(configSetup,"ledbright",changingVal);
                     FastLED.setBrightness(changingVal);
                   }
@@ -710,7 +770,7 @@ void onClick(int id) {
                 case 23:                  
                   doAction = 4;
                   //Serial.println("S3");
-                  eeSave();
+                  //eeSave();
                   saveConfig();
                   sendCom("M8","0"); 
                   curFrame = F_ACTION;
@@ -1044,13 +1104,13 @@ void fMenu() {
           break;                          
           case 14:
             //drawSwitch(option.isAP);
-            drawSwitch(jsonRead(configSetup,"servoMIN"));
+            drawSwitch(jsonReadtoBool(configSetup,"isAP"));
           break;
           case 15:
-            drawText(WiFi.SSID());
+            drawText(curWifiSsid);
             break;
           case 16:
-            drawText("Foo");//wifi pass
+            drawText(curWifiPass);//wifi pass
           break;
           case 17:
             //drawText(String(option.feedback)+" ml");
@@ -1149,9 +1209,23 @@ void fWait() {
   display.clearDisplay();
   docksDraw();
   //display.setTextSize(1);
-  display.setCursor(10,30);
+  display.setCursor(10,20);
   display.setTextColor(WHITE);
-  display.print("Waiting...");
+  display.println("Waiting...");
+  if (isWS) display.println("WebSocket ON...");
+  /*  // Вывод LED на экран
+  String rs,gs,bs;
+  for (int i=0; i<6; i++ ){
+    rs += String(leds[i].r);
+    rs +=" ";
+    gs += String(leds[i].g);
+    gs +=" "; 
+    bs += String(leds[i].b);
+    bs +=" ";       
+  }
+  display.println("R: "+ String(rs));
+  display.println("G: "+ String(gs));
+  display.println("B: "+ String(bs));*/
   display.display();
 }
 void docksDraw() {
@@ -1259,35 +1333,49 @@ void userNav(int action) {
   }
 }
 
-void DSEvent(int pos, String code) {
+void DSEvent(int pos, String code) {//pos 1-6
   bool isNew = true;
-  pos = pos-1;
+  pos = pos-1;                      //pos 0-5
+ 
+  //SocketData("pos",String(pos),"99");
   if (code == "0") {
+//SocketSend("id: "+users[dock[pos].user].id+" doze: "+ String(users[dock[pos].user].doze));
+    if (users[dock[pos].user].id.length() > 2 && users[dock[pos].user].doze == 0) {
+      //SocketSend("delete");
+      int del = dock[pos].user;
+            users[del].id = "";
+            users[del].name = "";
+            users[del].doze = 0;
+            users[del].color = "";
+            users[del].total = 0;
+            users[del].totalShots = 0;
+    }
     dock[pos].user = -1;
     dock[pos].state = -1;
+    
   } else {
     userCount();
     for (int i = 0 ; i<6 ; i++) {
       if (users[i].id == code) {
         isNew = false;
         dock[pos].user = i;
-        dock[pos].state = 0; 
+        if (users[i].doze > 0) dock[pos].state = 0; 
+        if (users[i].doze == 0) dock[pos].state = 2; 
       } 
     }
     if (isNew) {
+        String colorName =findColor(code);
         users[totalUsers].id = code;
-        users[totalUsers].name = totalUsers+1;
+        users[totalUsers].name = colorName;//totalUsers+1;
+        users[totalUsers].color = colorName;
         users[totalUsers].doze = 0;
         users[totalUsers].total = 0;
         dock[pos].user=totalUsers;
-        dock[pos].state=2;   
+        dock[pos].state=2; 
+        totalUsers++;  
     }
-  }
-  //      for ( int x = 0 ; x <  6;x++) {
-  //        Serial.print(x);
-  //        Serial.print(" - ");
-  //        Serial.println(dock[x]);
-  //      }
+  } 
+  SocketSendDock(pos);
 }
 
 void fUsers(){
@@ -1303,7 +1391,7 @@ void fUsers(){
         for ( int x = 0 ; x <  6;x++) {
           if (dock[x].user == i)  pos = String (x+1);
         }
-        str = pos + "|" + users[curUsers[i]].name; 
+        str = pos + "|" + utf8rus(users[curUsers[i]].name); 
         display.print(str);
         display.setCursor(75,11+(i*9));
         str = "|" + String(users[curUsers[i]].doze) + "|" + String(users[curUsers[i]].total);
@@ -1316,9 +1404,9 @@ void fUsers(){
         display.drawRoundRect(10, 17, 108, 40,5, WHITE);
         uint16_t w, h;
         int16_t  x1, y1;
-        display.getTextBounds(users[curUsers[curUPos]].name, 0, 0, &x1, &y1, &w, &h);
+        display.getTextBounds(utf8rus(users[curUsers[curUPos]].name), 0, 0, &x1, &y1, &w, &h);
         display.setCursor((128-w)/2,22);
-        display.print(users[curUsers[curUPos]].name);
+        display.print(utf8rus(users[curUsers[curUPos]].name));
         display.getTextBounds(utf8rus("Доза: ")+String(changingVal)+" ml", 0, 0, &x1, &y1, &w, &h);  
         display.setCursor((128-w)/2,33);
         display.print(utf8rus("Доза: ")+String(changingVal)+" ml");
@@ -1351,7 +1439,7 @@ void fStart(){
 
 void FS_init(void) {
   SPIFFS.begin();
-  /*
+  
   {
     Dir dir = SPIFFS.openDir("/");
     while (dir.next()) {
@@ -1359,6 +1447,7 @@ void FS_init(void) {
       size_t fileSize = dir.fileSize();
     }
   }
+  
   //HTTP страницы для работы с FFS
   //list directory
   HTTP.on("/list", HTTP_GET, handleFileList);
@@ -1374,7 +1463,7 @@ void FS_init(void) {
   //second callback handles file uploads at that location
   HTTP.on("/edit", HTTP_POST, []() {
     HTTP.send(200, "text/plain", "");
-  }, handleFileUpload);*/
+  }, handleFileUpload);
   //called when the url is not defined here
   //use it to load content from SPIFFS
   HTTP.onNotFound([]() {
@@ -1495,6 +1584,89 @@ void HTTP_init(void) {
   HTTP.on("/config.json", HTTP_GET, []() {
     HTTP.send(200, "application/json", configSetup);
   });
+
+  // -------------------Выдаем данные users
+  HTTP.on("/users.json", HTTP_GET, []() {
+
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& root = jsonBuffer.createObject();
+    JsonArray& usersNode = root.createNestedArray("users");
+    for (int i=0; i < totalUsers; i++ ){
+      if (users[i].id != "") {
+        JsonObject& users_0 = usersNode.createNestedObject();
+        users_0["ID"] = users[i].id;
+        users_0["name"] = users[i].name;
+        users_0["color"] = users[i].color;
+        users_0["doze"] = int(users[i].doze);
+        users_0["total"] = int(users[i].total);
+        users_0["totalshots"] = int(users[i].totalShots);
+      }
+    }
+    String out;
+    root.printTo(out);
+    HTTP.send(200, "application/json", out);
+  });
+
+  HTTP.on("/saveusers", HTTP_GET, []() {
+    String jstr= HTTP.arg("json");
+    DynamicJsonBuffer jsonBuffer;
+  // Parse the JSON input
+    JsonObject& jarr = jsonBuffer.parseObject(jstr);
+  // Parse succeeded?
+    JsonArray& jusers =jarr["users"];
+    if (jusers.success()) {
+  // Yes! We can extract values.
+    //for (int i; i< jusers.size; i++) {
+      int i = 0;
+      for (JsonObject& user : jusers) { 
+        //for (int i=0;i<totalUsers;i++){
+          //String uid=user["ID"].as<String>();
+          //if (users[i].id == String(uid)) {
+            users[i].id = user["ID"].as<String>();
+            users[i].name = user["name"].as<String>();
+            users[i].doze = user["doze"];
+            users[i].color = user["color"].as<String>();
+            users[i].total = user["total"];
+            users[i].totalShots = user["totalshots"];
+            i++;
+          //}
+        //} 
+      }
+      while (i < 6) {
+            users[i].id = "";
+            users[i].name = "";
+            users[i].doze = 0;
+            users[i].color = "";
+            users[i].total = 0;
+            users[i].totalShots = 0;
+            i++;
+      }
+      userCount();
+      HTTP.send(200, "text/plain", "OK");
+    } else {
+  // No!
+  // The input may be invalid, or the JsonBuffer may be too small.
+      HTTP.send(200, "text/plain", "Error");
+    }
+    
+  });
+
+
+  HTTP.on("/saveconfig", HTTP_GET, []() {
+    String js= HTTP.arg("json");
+    configSetup = js;
+    saveConfig();
+    FastLED.setBrightness(jsonReadtoInt(configSetup, "ledbright"));
+    HTTP.send(200, "text/plain", "OK");
+  });
+    HTTP.on("/saveshot", HTTP_GET, []() {
+    String js= HTTP.arg("json");
+    //configSetup = js;
+    //saveConfig();
+    //FastLED.setBrightness(jsonReadtoInt(configSetup, "ledbright"));
+    writeFile("shots.json", js );
+    HTTP.send(200, "text/plain", "OK");
+  });
   // HTTP.on("/users.json", HTTP_GET, []() {
   //   HTTP.send(200, "application/json", configSetup);
   // });
@@ -1557,6 +1729,12 @@ int jsonReadtoInt(String &json, String name) {
   JsonObject& root = jsonBuffer.parseObject(json);
   return root[name];
 }
+// ------------- Чтение значения json bool
+bool jsonReadtoBool(String &json, String name) {
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(json);
+  return root[name].as<bool>();
+}
 
 // ------------- Запись значения json String
 String jsonWrite(String &json, String name, String volume) {
@@ -1577,6 +1755,38 @@ String jsonWrite(String &json, String name, int volume) {
   root.printTo(json);
   return json;
 }
+// ------------- Запись значения json bool
+String jsonWriteBool(String &json, String name, bool volume) {
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(json);
+  root[name] = volume;
+  json = "";
+  root.printTo(json);
+  return json;
+}
+// ------------- Поиск цвета по ID в shots.json
+String findColor(String id){
+  String jstr = readFile("shots.json", 2048);
+  DynamicJsonBuffer jsonBuffer;
+  // Parse the JSON input
+  JsonObject& jshotsarr = jsonBuffer.parseObject(jstr);
+  // Parse succeeded?
+  JsonArray& jshots =jshotsarr["shots"];
+  if (jshots.success()) {
+  // Yes! We can extract values.
+    //for (int i; i< jusers.size; i++) {
+    for (JsonObject& shot : jshots) {  
+      String shotID = shot["ID"].as<String>();
+      if (shotID == id) return shot["color"].as<String>();
+    }
+  } else {
+  // No!
+  // The input may be invalid, or the JsonBuffer may be too small.
+  return "Error";
+  }
+  return "grey";
+}
+
 
 void saveConfig (){
   writeFile("config.json", configSetup );
@@ -1611,60 +1821,66 @@ String writeFile(String fileName, String strings ) {
 }
 
 void WIFIinit() {
-  /*
-  // --------------------Получаем SSDP со страницы
-  HTTP.on("/ssid", HTTP_GET, []() {
-  jsonWrite(configSetup, "ssid", HTTP.arg("ssid"));
-  jsonWrite(configSetup, "password", HTTP.arg("password"));
-  saveConfig();                 // Функция сохранения данных во Flash
-  HTTP.send(200, "text/plain", "OK"); // отправляем ответ о выполнении
-  });
-   // --------------------Получаем SSDP со страницы
-  HTTP.on("/ssidap", HTTP_GET, []() {
-  jsonWrite(configSetup, "ssidAP", HTTP.arg("ssidAP"));
-  jsonWrite(configSetup, "passwordAP", HTTP.arg("passwordAP"));
-  saveConfig();                 // Функция сохранения данных во Flash
-  HTTP.send(200, "text/plain", "OK"); // отправляем ответ о выполнении
-  });
-*/
-
-  // Попытка подключения к точке доступа
-  WiFi.mode(WIFI_STA);
-  byte tries = 11;
-  String _ssid = jsonRead(configSetup, "wifiSSID");
-  String _password = jsonRead(configSetup, "wifiPASS");
-  if (_ssid == "" && _password == "") {
-    WiFi.begin();
-  }
-  else {
-    WiFi.begin(_ssid.c_str(), _password.c_str());
-  }
-  // Делаем проверку подключения до тех пор пока счетчик tries
-  // не станет равен нулю или не получим подключение
-  while (--tries && WiFi.status() != WL_CONNECTED)
-  {
-    Serial.print(".");
-    delay(1000);
-  }
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    // Если не удалось подключиться запускаем в режиме AP
-    Serial.println("");
-    Serial.println("WiFi up AP");
+    /*
+    // --------------------Получаем SSDP со страницы
+    HTTP.on("/ssid", HTTP_GET, []() {
+    jsonWrite(configSetup, "ssid", HTTP.arg("ssid"));
+    jsonWrite(configSetup, "password", HTTP.arg("password"));
+    saveConfig();                 // Функция сохранения данных во Flash
+    HTTP.send(200, "text/plain", "OK"); // отправляем ответ о выполнении
+    });
+    // --------------------Получаем SSDP со страницы
+    HTTP.on("/ssidap", HTTP_GET, []() {
+    jsonWrite(configSetup, "ssidAP", HTTP.arg("ssidAP"));
+    jsonWrite(configSetup, "passwordAP", HTTP.arg("passwordAP"));
+    saveConfig();                 // Функция сохранения данных во Flash
+    HTTP.send(200, "text/plain", "OK"); // отправляем ответ о выполнении
+    });
+  */
+  if (!jsonReadtoBool(configSetup,"isAP")){
+    // Попытка подключения к точке доступа
+    WiFi.mode(WIFI_STA);
+    byte tries = 11;
+    String _ssid = jsonRead(configSetup, "wifiSSID");
+    String _password = jsonRead(configSetup, "wifiPASS");
+    curWifiPass=_password;
+    curWifiSsid=_ssid;
+    if (_ssid == "" && _password == "") {
+      WiFi.begin();
+    }
+    else {
+      WiFi.begin(_ssid.c_str(), _password.c_str());
+    }
+    // Делаем проверку подключения до тех пор пока счетчик tries
+    // не станет равен нулю или не получим подключение
+    while (--tries && WiFi.status() != WL_CONNECTED)
+    {
+      Serial.print(".");
+      delay(1000);
+    }
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      // Если не удалось подключиться запускаем в режиме AP
+      Serial.println("");
+      Serial.println("WiFi up AP");
+      StartAPMode();
+    }
+    else {
+      // Иначе удалось подключиться отправляем сообщение
+      // о подключении и выводим адрес IP
+      Serial.println("");
+      Serial.println("WiFi connected");
+      Serial.println("IP address: ");
+      Serial.println(WiFi.localIP());
+    }    
+    Serial.print("SSID ");
+    Serial.println(_ssid);
+    Serial.print("PASS ");
+    Serial.println(_password);
+    jsonWrite(configSetup, "ip", WiFi.localIP().toString()); 
+  } else {
     StartAPMode();
   }
-  else {
-    // Иначе удалось подключиться отправляем сообщение
-    // о подключении и выводим адрес IP
-    Serial.println("");
-    Serial.println("WiFi connected");
-    Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());
-  }    
-  Serial.print("SSID ");
-  Serial.println(_ssid);
-  Serial.print("PASS ");
-  Serial.println(_password);
 }
 
 bool StartAPMode() {
@@ -1679,6 +1895,68 @@ bool StartAPMode() {
   // хронящихся в переменных _ssidAP _passwordAP
   String _ssidAP = jsonRead(configSetup, "APSSID");
   String _passwordAP = jsonRead(configSetup, "APPASS");
+  curWifiSsid = _ssidAP;
+  curWifiPass=_passwordAP;
+  jsonWrite(configSetup, "ip", apIP.toString());
   WiFi.softAP(_ssidAP.c_str(), _passwordAP.c_str());
   return true;
+}
+//###############################################################
+//   WEBSOCKET ##################################################
+//###############################################################
+
+void webSocket_init() {
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
+}
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:  // Событие происходит при отключени клиента 
+      Serial.println("web Socket disconnected");
+      isWS=false;
+      break;
+    case WStype_CONNECTED: // Событие происходит при подключении клиента
+      {
+        Serial.println("web Socket Connected"); 
+        isWS=true;
+        //webSocket.sendTXT(num, configJson); // Отправим в всю строку с данными используя номер клиента он в num
+      }
+      break;
+    case WStype_TEXT: // Событие происходит при получении данных текстового формата из webSocket
+      // webSocket.sendTXT(num, "message here"); // Можно отправлять любое сообщение как строку по номеру соединения
+      // webSocket.broadcastTXT("message here");
+      break;
+    case WStype_BIN:      // Событие происходит при получении бинарных данных из webSocket
+      // webSocket.sendBIN(num, payload, length);
+      break;
+  }
+}
+// Отправка данных в Socket всем получателям
+// Параметры Имя ключа, Данные, Предыдущее значение
+void SocketData (String key, String data, String data_old)  {
+  if (data_old != data && isWS) {
+    String broadcast = "{}";
+    jsonWrite(broadcast, key, data);
+    webSocket.broadcastTXT(broadcast);
+  }
+}
+void SocketSend (String broadcast)  {
+  if (isWS){
+    webSocket.broadcastTXT(broadcast); 
+  }
+}
+void SocketSendDock(int pos) {
+  if (isWS){
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& root = jsonBuffer.createObject();
+    JsonArray& dockNode = root.createNestedArray("dock");
+    JsonObject& dock0 = dockNode.createNestedObject();
+    dock0["pos"] = pos;
+    dock0["state"] = dock[pos].state;
+    dock0["user"] = dock[pos].user;
+    if (dock[pos].user >= 0) dock0["id"] = users[dock[pos].user].id;
+    String send;
+    root.printTo(send);
+    SocketSend(send);
+  }
 }
