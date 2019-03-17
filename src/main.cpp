@@ -24,7 +24,8 @@
 // Объект для обнавления с web страницы
 ESP8266HTTPUpdateServer httpUpdater;
 #include <ESP8266SSDP.h>        //Содержится в пакете. Видео с уроком http://esp8266-arduinoide.ru/step3-ssdp
-#include <ArduinoJson.h> 
+#include <ArduinoJson.h>
+#include <ArduinoOTA.h>
 
 //_____________________________________________________________________________________________________________________________________
 // Web интерфейс для устройства
@@ -39,6 +40,9 @@ String userJson = "{users:[]}";
 
 int port = 80;
 
+#define VERSION         "0.0.1"
+#define VERSION_SPIFF   "0.0.1"
+#define CONFIG_VERSION  "v02"
 
 String utf8rus(String source);
 using namespace ace_button;
@@ -59,7 +63,7 @@ using namespace ace_button;
 #define ACCELERATION    3000
 
 #define CONFIG_START    0
-#define CONFIG_VERSION  "v02"
+
 
 #define F_WAIT          0
 #define F_FILL          99
@@ -76,7 +80,7 @@ using namespace ace_button;
 #define M_DEC           6
 
 
-#define MENU_TOTAL      24
+#define MENU_TOTAL      25
 
 #define A_NOACTION      0
 #define A_CHECK         1
@@ -156,7 +160,9 @@ MenuItem menu[MENU_TOTAL] = {
   {20 ,19 ,utf8rus("Рабочий")             ,A_ACTION ,NULL   ,0  ,50},  
   {21 ,19 ,utf8rus("Демо")                ,A_ACTION ,NULL   ,0  ,50},
   {22 ,2  ,utf8rus("Яркость LED")         ,A_DIGVAL ,NULL   ,0  ,254},
-  {23 ,2  ,utf8rus("Сохранить")           ,A_ACTION ,NULL   ,0  ,50},          
+  {23 ,2  ,utf8rus("Сохранить")           ,A_ACTION ,NULL   ,0  ,50},
+  {24 ,11 ,utf8rus("Откат 100 мл")        ,A_ACTION ,NULL   ,0  ,0},
+            
 };
 
 struct settings {
@@ -286,6 +292,7 @@ void webSocket_init();
 void SocketSend (String broadcast);
 void SocketSendDock(int pos);
 void startProc();
+String IpAddress2String(const IPAddress& ipAddress);
 
 void setup(){                 
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
@@ -293,6 +300,7 @@ void setup(){
   fLogo();
   Serial.begin(9600);
   inputString.reserve(200);
+  sendCom("RESET","0");
   FS_init();
   configSetup = readFile("config.json", 4096);
   //Serial.println(configSetup);
@@ -316,6 +324,7 @@ void setup(){
   bOk.init(OK_PIN, HIGH, 2 /* id */);
 
   stepper.begin(120,MICROSTEP);
+  stepper.setEnableActiveState(LOW);
   stepper.setSpeedProfile(stepper.LINEAR_SPEED, ACCELERATION, ACCELERATION);
   stepper.disable();
   webSocket_init();
@@ -556,7 +565,7 @@ void pump(uint ml) {
   int feedback = jsonReadtoInt(configSetup,"feedback");
   stepper.enable();
   //ledDraw(6, CRGB::OrangeRed);
-  stepper.move(ml*MICROSTEP*stepPerMl);
+  stepper.move((feedback+ml)*MICROSTEP*stepPerMl);
   stepper.move(-feedback *MICROSTEP*stepPerMl);
   stepper.disable();
   //ledDraw(6, CRGB::Aqua);
@@ -758,7 +767,11 @@ void onClick(int id) {
                   //doAction = 4;
                   //sendCom("M5","0"); 
                   //curFrame = F_ACTION;
+                  sendCom("M2","0");
+                  delay(500);
                   pump(100);
+                  delay(500);
+                  sendCom("M3","0");
                   break;                                  
                 case 13:
                   if ( doAction==0) {
@@ -816,6 +829,16 @@ void onClick(int id) {
                   break;                                                                                                     
                 default:
                 break;
+                case 24:
+                  //doAction = 4;
+                  //sendCom("M5","0"); 
+                  //curFrame = F_ACTION;
+                  sendCom("M2","0");
+                  delay(500);
+                  pump(-100);
+                  delay(500);
+                  sendCom("M3","0");
+                  break; 
               }
           } else {
             menuNav(M_IN);
@@ -1093,6 +1116,9 @@ void fLogo()
 {
   display.clearDisplay();
   display.drawBitmap(0, 0, AlcoBot_Logo_FS, 128, 64, WHITE);
+  display.setCursor(1,1);
+  display.setTextColor(WHITE);
+  display.print(VERSION);
   display.display();
 }
 //  Menu frames
@@ -1162,13 +1188,13 @@ void fMenu() {
             drawText(String(jsonReadtoInt(configSetup,"feedback"))+ " ml");
           break;          
           case 18:
-            drawText("ToDo");//ip
+            drawText(IpAddress2String(WiFi.localIP()));//ip
            break;           
           default:
           break;
           
         }
-        yoff=yoff+9;
+        yoff=yoff+8;
       } else {
         display.setCursor(5,yoff);
         display.print(utf8rus("Назад"));
@@ -1178,10 +1204,18 @@ void fMenu() {
     //if (doAction == 2 && curMPos == 7) drawChangeDig(menu[curMPos].name, "");
     //if (doAction == 2 && curMPos == 13) drawChangeDig(menu[curMPos].name, " ml");
     if (doAction == 2 ) drawChangeDig(menu[curMPos].name);
-    display.fillRect(0,12+(9*curAPos),4,9,WHITE);
+    display.fillRect(0,12+(8*curAPos),4,8,WHITE);
   }
   
   display.display();
+}
+
+String IpAddress2String(const IPAddress& ipAddress)
+{
+  return String(ipAddress[0]) + String(".") +\
+  String(ipAddress[1]) + String(".") +\
+  String(ipAddress[2]) + String(".") +\
+  String(ipAddress[3])  ; 
 }
 
 void drawChangeDig (String cap) {
@@ -1494,7 +1528,7 @@ void FS_init(void) {
     Dir dir = SPIFFS.openDir("/");
     while (dir.next()) {
       String fileName = dir.fileName();
-      size_t fileSize = dir.fileSize();
+      //size_t fileSize = dir.fileSize();
     }
   }
   
@@ -1548,7 +1582,8 @@ bool handleFileRead(String path) {
     if (SPIFFS.exists(pathWithGz))
       path += ".gz";
     File file = SPIFFS.open(path, "r");
-    size_t sent = HTTP.streamFile(file, contentType);
+    //size_t sent = 
+    HTTP.streamFile(file, contentType);
     file.close();
     return true;
   }
@@ -1642,12 +1677,13 @@ void HTTP_init(void) {
   // -------------------Выдаем данные users
   HTTP.on("/users.json", HTTP_GET, []() {
 
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& root = jsonBuffer.createObject();
-    JsonArray& usersNode = root.createNestedArray("users");
+    
+    DynamicJsonDocument jsonBuffer(1024);
+    //JsonObject root = jsonBuffer.createObject();
+    JsonArray usersNode = jsonBuffer.createNestedArray("users");
     for (int i=0; i < totalUsers; i++ ){
       if (users[i].id != "") {
-        JsonObject& users_0 = usersNode.createNestedObject();
+        JsonObject users_0 = usersNode.createNestedObject();
         users_0["ID"] = users[i].id;
         users_0["name"] = users[i].name;
         users_0["color"] = users[i].color;
@@ -1657,22 +1693,24 @@ void HTTP_init(void) {
       }
     }
     String out;
-    root.printTo(out);
+    //jsonBuffer.printTo(out);
+    serializeJsonPretty(jsonBuffer,out);
     HTTP.send(200, "application/json", out);
   });
 
   HTTP.on("/saveusers", HTTP_GET, []() {
     String jstr= HTTP.arg("json");
-    DynamicJsonBuffer jsonBuffer;
+    DynamicJsonDocument jsonBuffer(1024);
   // Parse the JSON input
-    JsonObject& jarr = jsonBuffer.parseObject(jstr);
+    //JsonObject& jarr = jsonBuffer.parseObject(jstr);
+    deserializeJson(jsonBuffer, jstr);
   // Parse succeeded?
-    JsonArray& jusers =jarr["users"];
-    if (jusers.success()) {
+    JsonArray jusers =jsonBuffer["users"];
+    if (jusers.size()) {
   // Yes! We can extract values.
     //for (int i; i< jusers.size; i++) {
       int i = 0;
-      for (JsonObject& user : jusers) { 
+      for (JsonObject user : jusers) { 
         //for (int i=0;i<totalUsers;i++){
           //String uid=user["ID"].as<String>();
           //if (users[i].id == String(uid)) {
@@ -1773,64 +1811,64 @@ void SSDP_init(void) {
 
 // ------------- Чтение значения json
 String jsonRead(String &json, String name) {
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json);
-  return root[name].as<String>();
+  DynamicJsonDocument jsonBuffer(1024);
+  deserializeJson(jsonBuffer,json);
+  return jsonBuffer[name].as<String>();
 }
 
 // ------------- Чтение значения json
 int jsonReadtoInt(String &json, String name) {
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json);
-  return root[name];
+  DynamicJsonDocument jsonBuffer(1024);
+  deserializeJson(jsonBuffer, json);
+  return jsonBuffer[name];
 }
 // ------------- Чтение значения json bool
 bool jsonReadtoBool(String &json, String name) {
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json);
-  return root[name].as<bool>();
+  DynamicJsonDocument jsonBuffer(1024);
+  deserializeJson(jsonBuffer, json);
+  return jsonBuffer[name].as<bool>();
 }
 
 // ------------- Запись значения json String
 String jsonWrite(String &json, String name, String volume) {
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json);
-  root[name] = volume;
+  DynamicJsonDocument jsonBuffer(1024);
+  deserializeJson(jsonBuffer, json);
+  jsonBuffer[name] = volume;
   json = "";
-  root.printTo(json);
+  serializeJson(jsonBuffer, json);
   return json;
 }
 
 // ------------- Запись значения json int
 String jsonWrite(String &json, String name, int volume) {
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json);
-  root[name] = volume;
+  DynamicJsonDocument jsonBuffer(1024);
+  deserializeJson(jsonBuffer, json);
+  jsonBuffer[name] = volume;
   json = "";
-  root.printTo(json);
+  serializeJson(jsonBuffer, json);
   return json;
 }
 // ------------- Запись значения json bool
 String jsonWriteBool(String &json, String name, bool volume) {
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(json);
-  root[name] = volume;
+  DynamicJsonDocument jsonBuffer(1024);
+  deserializeJson(jsonBuffer, json);
+  jsonBuffer[name] = volume;
   json = "";
-  root.printTo(json);
+  serializeJson(jsonBuffer, json);
   return json;
 }
 // ------------- Поиск цвета по ID в shots.json
 String findColor(String id){
   String jstr = readFile("shots.json", 2048);
-  DynamicJsonBuffer jsonBuffer;
+  DynamicJsonDocument jsonBuffer(1024);
   // Parse the JSON input
-  JsonObject& jshotsarr = jsonBuffer.parseObject(jstr);
+  deserializeJson(jsonBuffer, jstr);
   // Parse succeeded?
-  JsonArray& jshots =jshotsarr["shots"];
-  if (jshots.success()) {
+  JsonArray jshots =jsonBuffer["shots"];
+  if (jshots.size()) {
   // Yes! We can extract values.
     //for (int i; i< jusers.size; i++) {
-    for (JsonObject& shot : jshots) {  
+    for (JsonObject shot : jshots) {  
       String shotID = shot["ID"].as<String>();
       if (shotID == id) return shot["color"].as<String>();
     }
@@ -1967,12 +2005,12 @@ void webSocket_init() {
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:  // Событие происходит при отключени клиента 
-      Serial.println("web Socket disconnected");
+      //Serial.println("web Socket disconnected");
       isWS=false;
       break;
     case WStype_CONNECTED: // Событие происходит при подключении клиента
       {
-        Serial.println("web Socket Connected"); 
+        //Serial.println("web Socket Connected"); 
         isWS=true;
         //webSocket.sendTXT(num, configJson); // Отправим в всю строку с данными используя номер клиента он в num
       }
@@ -2002,16 +2040,16 @@ void SocketSend (String broadcast)  {
 }
 void SocketSendDock(int pos) {
   if (isWS){
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& root = jsonBuffer.createObject();
-    JsonArray& dockNode = root.createNestedArray("dock");
-    JsonObject& dock0 = dockNode.createNestedObject();
+    DynamicJsonDocument jsonBuffer(1024);
+    //JsonObject& root = jsonBuffer.createObject();
+    JsonArray dockNode = jsonBuffer.createNestedArray("dock");
+    JsonObject dock0 = dockNode.createNestedObject();
     dock0["pos"] = pos;
     dock0["state"] = dock[pos].state;
     dock0["user"] = dock[pos].user;
     if (dock[pos].user >= 0) dock0["id"] = users[dock[pos].user].id;
     String send;
-    root.printTo(send);
+    serializeJson(jsonBuffer, send);
     SocketSend(send);
   }
 }
