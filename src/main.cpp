@@ -35,7 +35,7 @@ File fsUploadFile;
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 String configSetup = "{}";
-String configJson = "{}";
+//String configJson = "{}";
 String userJson = "{users:[]}";
 
 int port = 80;
@@ -300,12 +300,13 @@ void setup(){
   fLogo();
   Serial.begin(9600);
   inputString.reserve(200);
-  sendCom("RESET","0");
+  
   FS_init();
   configSetup = readFile("config.json", 4096);
   //Serial.println(configSetup);
   WIFIinit();
   HTTP_init();
+  sendCom("RESET","0");
   curName = utf8rus("Мастер Йода");
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
 
@@ -717,9 +718,9 @@ void onClick(int id) {
                 case 14:
                   //option.isAP = !option.isAP;
                   if (jsonReadtoBool(configSetup,"isAP")) {
-                    jsonWriteBool(configJson,"isAP",false);
+                    jsonWriteBool(configSetup,"isAP",false);
                   } else {
-                    jsonWriteBool(configJson,"isAP",true);
+                    jsonWriteBool(configSetup,"isAP",true);
                   }
                   break;
                 case 5:
@@ -1188,7 +1189,11 @@ void fMenu() {
             drawText(String(jsonReadtoInt(configSetup,"feedback"))+ " ml");
           break;          
           case 18:
-            drawText(IpAddress2String(WiFi.localIP()));//ip
+            if (WiFi.getMode() == WIFI_AP) {
+              drawText(jsonRead(configSetup,"ip"));//ip
+            } else {
+              drawText(IpAddress2String(WiFi.localIP()));//ip
+            }
            break;           
           default:
           break;
@@ -1288,10 +1293,12 @@ void fWait() {
   display.clearDisplay();
   docksDraw();
   //display.setTextSize(1);
-  display.setCursor(10,20);
+  display.setCursor(0,12);
   display.setTextColor(WHITE);
-  display.println("Waiting...");
-  if (isWS) display.println("WebSocket ON...");
+  
+  //display.println("Waiting...");
+  //if (isWS) display.println("WebSocket ON...");
+  //display.println(WiFi.status());
   /*  // Вывод LED на экран
   String rs,gs,bs;
   for (int i=0; i<6; i++ ){
@@ -1308,33 +1315,50 @@ void fWait() {
   display.display();
 }
 void docksDraw() {
-  int x = 4;
-  int y = 4;
-  int shift = 10;
-  for (int i = 0; i < 6; i++){
-    if (dock[i].user == -1) {
-      display.drawCircle(x, y, 1, WHITE);
-      //ledDraw(i,CRGB::Black);
+  if (isStart) {
+    int x = 4;
+    int y = 4;
+    int shift = 10;
+    for (int i = 0; i < 6; i++){
+      if (dock[i].user == -1) {
+        display.drawCircle(x, y, 1, WHITE);
+        //ledDraw(i,CRGB::Black);
+      }
+      if (dock[i].user != -1 && dock[i].state == 0) {
+        display.drawCircle(x, y, 4, WHITE);
+        //ledDraw(i,CRGB::Green);
+        }
+      if (dock[i].user != -1 && dock[i].state == 1) {
+        display.fillCircle(x, y, 4, WHITE);
+        //ledDraw(i,CRGB::Red);
+        }
+      if (dock[i].user != -1 && dock[i].state == 2) {
+        display.fillCircle(x, y, 2, WHITE);
+        //ledDraw(i,CRGB::Yellow);
+        }
+      x = x + shift;
     }
-    if (dock[i].user != -1 && dock[i].state == 0) {
-      display.drawCircle(x, y, 4, WHITE);
-      //ledDraw(i,CRGB::Green);
-      }
-    if (dock[i].user != -1 && dock[i].state == 1) {
-      display.fillCircle(x, y, 4, WHITE);
-      //ledDraw(i,CRGB::Red);
-      }
-    if (dock[i].user != -1 && dock[i].state == 2) {
-      display.fillCircle(x, y, 2, WHITE);
-      //ledDraw(i,CRGB::Yellow);
-      }
-    x = x + shift;
+  } else {
+    display.fillRoundRect(0,0,70,9,3,WHITE);
+    display.setCursor(4,1);
+    display.setTextColor(BLACK);
+    display.print(utf8rus("Прокачать !"));
   }
+
   
-  display.drawBitmap( 70, 0, drop,7, 9, WHITE);
-  display.setCursor(82,2);
-  display.setTextColor(WHITE);
-  display.print(String(totalDrink)+" ml");
+    if (WiFi.getMode() ==WIFI_AP) {
+      display.drawBitmap( 74, 0,ap_ico,13, 9, WHITE);
+    } else {
+      display.drawBitmap( 74, 0,wifi_ico,13, 9, WHITE);
+    }
+  
+  //Рисуем каплю с общим объемом налитого
+  // display.drawBitmap( 70, 0, drop,7, 9, WHITE);
+  // display.setCursor(82,2);
+  // display.setTextColor(WHITE);
+  // display.print(String(totalDrink)+" ml");
+
+
 }
 void fAction() {
   //  display.setCursor(1,1);
@@ -1788,8 +1812,8 @@ void SSDP_init(void) {
    // --------------------Получаем SSDP со страницы
   HTTP.on("/ssdp", HTTP_GET, []() {
     String ssdp = HTTP.arg("ssdp");
-  configJson=jsonWrite(configJson, "SSDP", ssdp);
-  configJson=jsonWrite(configSetup, "SSDP", ssdp);
+  //configJson=jsonWrite(configJson, "SSDP", ssdp);
+  //configJson=jsonWrite(configSetup, "SSDP", ssdp);
   SSDP.setName(jsonRead(configSetup, "SSDP"));
   saveConfig();                 // Функция сохранения данных во Flash
   HTTP.send(200, "text/plain", "OK"); // отправляем ответ о выполнении
@@ -1957,6 +1981,7 @@ void WIFIinit() {
       Serial.println("");
       Serial.println("WiFi up AP");
       StartAPMode();
+      //jsonWriteBool(configSetup,"isAP",true);
     }
     else {
       // Иначе удалось подключиться отправляем сообщение
@@ -1973,6 +1998,7 @@ void WIFIinit() {
     jsonWrite(configSetup, "ip", WiFi.localIP().toString()); 
   } else {
     StartAPMode();
+    
   }
 }
 
@@ -1982,6 +2008,7 @@ bool StartAPMode() {
   WiFi.disconnect();
   // Меняем режим на режим точки доступа
   WiFi.mode(WIFI_AP);
+  //WiFi.getMode();
   // Задаем настройки сети
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   // Включаем WIFI в режиме точки доступа с именем и паролем
@@ -1991,6 +2018,7 @@ bool StartAPMode() {
   curWifiSsid = _ssidAP;
   curWifiPass=_passwordAP;
   jsonWrite(configSetup, "ip", apIP.toString());
+  jsonWriteBool(configSetup,"isAP",true);
   WiFi.softAP(_ssidAP.c_str(), _passwordAP.c_str());
   return true;
 }
