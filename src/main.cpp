@@ -1273,7 +1273,7 @@ void fFill()  {
       //display.setTextSize(1);
       display.setCursor(5,3);
       display.setTextColor(WHITE);
-      display.print(curName);
+      display.print(curName.substring(0,11));
       redraw=false;
     }
     display.fillRect(1, 15, 87, 47, BLACK),
@@ -1293,9 +1293,18 @@ void fWait() {
   display.clearDisplay();
   docksDraw();
   //display.setTextSize(1);
-  display.setCursor(0,12);
+  //display.setCursor(0,12);
   display.setTextColor(WHITE);
-  
+  String str="";
+  for (int i = 0; i < totalUsers; i++) {
+        display.setCursor(0,12+(i*8));
+        str = utf8rus(users[curUsers[i]].name.substring(0,11)); 
+        display.print(str);
+        display.setCursor(75,12+(i*8));
+        str = String(users[curUsers[i]].total) + " ml";
+        display.print(str);  
+     
+  }
   //display.println("Waiting...");
   //if (isWS) display.println("WebSocket ON...");
   //display.println(WiFi.status());
@@ -1499,16 +1508,16 @@ void fUsers(){
         for ( int x = 0 ; x <  6;x++) {
           if (dock[x].user == i)  pos = String (x+1);
         }
-        str = pos + "|" + utf8rus(users[curUsers[i]].name); 
+        str = pos + "|" + utf8rus(users[curUsers[i]].name.substring(0,11)); 
         display.print(str);
-        display.setCursor(75,11+(i*9));
+        display.setCursor(85,11+(i*9));
         str = "|" + String(users[curUsers[i]].doze) + "|" + String(users[curUsers[i]].total);
         display.print(str);  
      
     }
     display.fillRect(0,10+(9*curUPos),4,9,WHITE);
     if (isEditUser)  {
-        display.fillRoundRect(8, 15, 112, 34,5, BLACK);
+        display.fillRoundRect(8, 15, 112, 40,5, BLACK);
         display.drawRoundRect(10, 17, 108, 40,5, WHITE);
         uint16_t w, h;
         int16_t  x1, y1;
@@ -2049,6 +2058,16 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       break;
     case WStype_BIN:      // Событие происходит при получении бинарных данных из webSocket
       // webSocket.sendBIN(num, payload, length);
+      break;
+    case WStype_ERROR:
+      break;
+    case WStype_FRAGMENT_TEXT_START:
+      break;
+    case WStype_FRAGMENT_BIN_START:
+      break;
+    case WStype_FRAGMENT:
+      break;
+    case WStype_FRAGMENT_FIN:
       break;
   }
 }
